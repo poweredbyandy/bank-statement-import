@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+    <t t-name="account_statement_import_sheet_preview.StatementImportPreview">
+        <div class="o_statement_import_preview">
+            <t t-if="!hasPreview">
+                <div class="o_statement_import_empty text-center text-muted p-4">
+                    <i class="fa fa-cloud-upload fa-2x mb-2" />
+                    <div>Suba un archivo TXT, CSV o Excel para ver la vista previa aquí.</div>
+                </div>
+            </t>
+            <t t-else="">
+                <div t-attf-class="alert {{ statusClass }} d-flex gap-3 align-items-start mb-3" role="status">
+                    <i t-attf-class="fa {{ statusIcon }} fa-lg mt-1" />
+                    <div class="flex-grow-1">
+                        <div class="fw-bold" t-esc="summary.title || ''" />
+                        <div t-esc="summary.help || ''" />
+                        <div class="small mt-1" t-if="summary.total_rows">
+                            Filas del archivo: <t t-esc="summary.total_rows" />
+                            <t t-if="summary.line_count">
+                                · Movimientos leídos: <t t-esc="summary.line_count" />
+                            </t>
+                            <t t-if="newCount">
+                                · Nuevos: <t t-esc="newCount" />
+                            </t>
+                            <t t-if="duplicateCount">
+                                · Omitidos (referencia repetida): <t t-esc="duplicateCount" />
+                            </t>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="o_statement_import_card mb-3">
+                    <div class="o_statement_import_card_title">
+                        <i class="fa fa-magic me-2" />
+                        Relacione las columnas importantes
+                    </div>
+                    <p class="text-muted small mb-2">
+                        Odoo ya intentó adivinarlas. Cambie un valor solo si algo se ve mal.
+                    </p>
+                    <div class="row g-3">
+                        <t t-foreach="essentialTargets" t-as="target" t-key="target.name">
+                            <div class="col-md-6 col-xl-4">
+                                <label class="form-label mb-0 d-flex justify-content-between">
+                                    <span>
+                                        <t t-esc="target.label" />
+                                        <t t-if="target.required">
+                                            <span class="text-danger">*</span>
+                                        </t>
+                                    </span>
+                                    <span
+                                        t-if="isMissing(target)"
+                                        class="badge text-bg-warning"
+                                    >Obligatorio</span>
+                                    <span
+                                        t-elif="selectedColumn(target.name)"
+                                        class="badge text-bg-success"
+                                    >OK</span>
+                                </label>
+                                <div class="form-text mt-0 mb-1" t-esc="target.help" />
+                                <select
+                                    class="form-select"
+                                    t-att-class="isMissing(target) ? 'is-invalid' : ''"
+                                    t-on-change="(ev) => this.onTargetChange(target.name, ev)"
+                                >
+                                    <option value="">Seleccione una columna...</option>
+                                    <t t-foreach="columns" t-as="column" t-key="column_index">
+                                        <option
+                                            t-att-value="column"
+                                            t-att-selected="selectedColumn(target.name) === column"
+                                            t-esc="column"
+                                        />
+                                    </t>
+                                </select>
+                            </div>
+                        </t>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm px-0 mt-3"
+                        t-on-click="toggleOptional"
+                    >
+                        <i t-attf-class="fa {{ state.showOptional ? 'fa-chevron-down' : 'fa-chevron-right' }} me-1" />
+                        <t t-if="state.showOptional">Ocultar columnas opcionales</t>
+                        <t t-else="">Más columnas opcionales</t>
+                    </button>
+
+                    <div t-if="state.showOptional" class="row g-3 mt-1">
+                        <t t-foreach="optionalTargets" t-as="target" t-key="target.name">
+                            <div class="col-md-6 col-xl-4">
+                                <label class="form-label mb-0" t-esc="target.label" />
+                                <div class="form-text mt-0 mb-1" t-esc="target.help" />
+                                <select
+                                    class="form-select form-select-sm"
+                                    t-on-change="(ev) => this.onTargetChange(target.name, ev)"
+                                >
+                                    <option value="">No usar</option>
+                                    <t t-foreach="columns" t-as="column" t-key="column_index">
+                                        <option
+                                            t-att-value="column"
+                                            t-att-selected="selectedColumn(target.name) === column"
+                                            t-esc="column"
+                                        />
+                                    </t>
+                                </select>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <div class="o_statement_import_card mb-3" t-if="parsedLines.length">
+                    <div class="o_statement_import_card_title">
+                        <i class="fa fa-eye me-2" />
+                        Así se verá en Odoo
+                    </div>
+                    <p class="text-muted small mb-2">
+                        Estas son las primeras transacciones preparadas desde su archivo.
+                        Si la referencia ya existe en el diario, el movimiento se omite.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle o_statement_import_parsed_table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Referencia</th>
+                                    <th>Descripción</th>
+                                    <th class="text-end">Monto</th>
+                                    <th class="text-end">Saldo</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    t-foreach="parsedLines"
+                                    t-as="line"
+                                    t-key="line_index"
+                                    t-att-class="line.is_duplicate ? 'table-warning' : ''"
+                                >
+                                    <td t-esc="line.date" />
+                                    <td t-esc="line.ref || '—'" />
+                                    <td class="o_statement_import_desc" t-esc="line.payment_ref || '—'" />
+                                    <td
+                                        class="text-end fw-semibold"
+                                        t-att-class="amountClass(line.amount)"
+                                        t-esc="formatAmount(line.amount)"
+                                    />
+                                    <td class="text-end text-muted" t-esc="formatAmount(line.balance)" />
+                                    <td>
+                                        <span
+                                            t-if="line.is_duplicate"
+                                            class="badge text-bg-warning"
+                                            t-esc="line.duplicate_note || 'Se omitirá'"
+                                        />
+                                        <span
+                                            t-else=""
+                                            class="badge text-bg-success"
+                                        >Nuevo</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="o_statement_import_card">
+                    <button
+                        type="button"
+                        class="btn btn-link btn-sm px-0"
+                        t-on-click="toggleRawFile"
+                    >
+                        <i t-attf-class="fa {{ state.showRawFile ? 'fa-chevron-down' : 'fa-chevron-right' }} me-1" />
+                        <t t-if="state.showRawFile">Ocultar columnas del archivo original</t>
+                        <t t-else="">Ver columnas del archivo original</t>
+                    </button>
+                    <div t-if="state.showRawFile" class="table-responsive mt-2">
+                        <table class="table table-sm table-striped table-bordered o_statement_import_preview_table">
+                            <thead>
+                                <tr>
+                                    <th t-foreach="columns" t-as="column" t-key="column_index">
+                                        <div t-esc="column" />
+                                        <span
+                                            t-if="columnBadge(column_index)"
+                                            class="badge text-bg-primary"
+                                            t-esc="columnBadge(column_index)"
+                                        />
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="rows" t-as="row" t-key="row_index">
+                                    <td
+                                        t-foreach="columns"
+                                        t-as="column"
+                                        t-key="column_index"
+                                        t-att-class="columnBadge(column_index) ? 'table-primary' : ''"
+                                        t-esc="row[column_index] or ''"
+                                    />
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+</templates>

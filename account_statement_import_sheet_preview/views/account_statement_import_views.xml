@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 andyengit
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="account_statement_import_form_preview" model="ir.ui.view">
+        <field name="name">account.statement.import.form.preview</field>
+        <field name="model">account.statement.import</field>
+        <field
+            name="inherit_id"
+            ref="account_statement_import_sheet_file.account_statement_import_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="attributes">
+                <attribute name="class">o_statement_import_preview_form</attribute>
+            </xpath>
+            <xpath expr="//h2" position="replace">
+                <div class="o_statement_import_hero mb-3">
+                    <h2>Importar extracto bancario</h2>
+                    <p class="text-muted mb-0">
+                        Suba el archivo de su banco. Odoo intentará detectar el formato
+                        solo. Luego revise la vista previa e importe.
+                    </p>
+                </div>
+            </xpath>
+            <xpath expr="//p[1]" position="replace" />
+            <xpath expr="//ul[@id='statement_format']" position="attributes">
+                <attribute name="class">list-inline text-muted small mb-2</attribute>
+            </xpath>
+            <xpath
+                expr="//ul[@id='statement_format']/li[field[@name='sheet_mapping_id']]"
+                position="attributes"
+            >
+                <attribute name="invisible">1</attribute>
+            </xpath>
+            <xpath expr="//field[@name='statement_file']" position="before">
+                <div class="o_statement_import_step mb-2">
+                    <span class="badge text-bg-primary me-2">1</span>
+                    <strong>Suba el archivo del banco</strong>
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='statement_filename']" position="after">
+                <field name="journal_id" invisible="1" />
+                <field name="allowed_sheet_mapping_ids" invisible="1" />
+                <field name="preview_state" invisible="1" />
+                <field name="preview_line_count" invisible="1" />
+                <field name="preview_message" invisible="1" />
+                <field name="preview_help" invisible="1" />
+                <field name="preview_error" invisible="1" />
+                <field name="cfg_timestamp_column" invisible="1" />
+                <field name="cfg_amount_column" invisible="1" />
+                <field name="cfg_amount_debit_column" invisible="1" />
+                <field name="cfg_amount_credit_column" invisible="1" />
+                <field name="cfg_debit_credit_column" invisible="1" />
+                <field name="cfg_balance_column" invisible="1" />
+                <field name="cfg_description_column" invisible="1" />
+                <field name="cfg_reference_column" invisible="1" />
+                <field name="cfg_notes_column" invisible="1" />
+                <field name="cfg_partner_name_column" invisible="1" />
+                <field name="cfg_transaction_id_column" invisible="1" />
+                <field name="cfg_currency_column" invisible="1" />
+                <field name="cfg_bank_account_column" invisible="1" />
+                <field name="cfg_bank_name_column" invisible="1" />
+                <field name="cfg_debit_value" invisible="1" />
+                <field name="cfg_credit_value" invisible="1" />
+
+                <div
+                    class="o_statement_import_step mt-3 mb-2"
+                    invisible="not statement_file"
+                >
+                    <span class="badge text-bg-primary me-2">2</span>
+                    <strong>Revise la vista previa</strong>
+                    <span class="text-muted ms-2">
+                        Confirme que fechas, montos y descripciones se ven bien.
+                    </span>
+                </div>
+
+                <group
+                    invisible="not statement_file"
+                    class="o_statement_import_simple_options"
+                >
+                    <group>
+                        <field
+                            name="sheet_mapping_id"
+                            domain="[('id', 'in', allowed_sheet_mapping_ids)]"
+                            options="{'no_create': True}"
+                            placeholder="Detectado automáticamente"
+                        />
+                        <field
+                            name="mapping_name"
+                            placeholder="Ej: Banesco TXT"
+                        />
+                        <field name="auto_save_mapping" widget="boolean_toggle" />
+                    </group>
+                    <group>
+                        <field name="show_advanced_options" widget="boolean_toggle" />
+                    </group>
+                </group>
+
+                <group
+                    string="Opciones avanzadas"
+                    invisible="not statement_file or not show_advanced_options"
+                >
+                    <group string="Lectura del archivo">
+                        <field name="cfg_delimiter" string="Separador" />
+                        <field
+                            name="cfg_file_encoding"
+                            string="Codificación"
+                            invisible="cfg_delimiter == 'n/a'"
+                        />
+                        <field
+                            name="cfg_quotechar"
+                            invisible="cfg_delimiter == 'n/a'"
+                        />
+                        <field name="cfg_timestamp_format" string="Formato de fecha" />
+                        <field
+                            name="cfg_float_thousands_sep"
+                            string="Separador de miles"
+                        />
+                        <field
+                            name="cfg_float_decimal_sep"
+                            string="Separador decimal"
+                        />
+                        <field name="cfg_no_header" string="Sin fila de encabezado" />
+                        <field
+                            name="cfg_header_lines_skip_count"
+                            string="Filas a saltar arriba"
+                        />
+                        <field
+                            name="cfg_footer_lines_skip_count"
+                            string="Filas a saltar abajo"
+                        />
+                        <field name="cfg_offset_column" string="Columnas a ignorar" />
+                        <field
+                            name="cfg_skip_empty_lines"
+                            string="Ignorar filas vacías"
+                        />
+                    </group>
+                    <group string="Manejo del monto">
+                        <field name="cfg_amount_type" string="Tipo de monto" />
+                        <field
+                            name="cfg_amount_inverse_sign"
+                            string="Invertir signo del monto"
+                        />
+                    </group>
+                </group>
+
+                <div invisible="not statement_file" class="mt-2">
+                    <field
+                        name="preview_json"
+                        widget="statement_import_preview"
+                        nolabel="1"
+                        colspan="2"
+                    />
+                </div>
+
+                <div
+                    class="o_statement_import_step mt-3"
+                    invisible="not statement_file or preview_state != 'ready'"
+                >
+                    <span class="badge text-bg-primary me-2">3</span>
+                    <strong>Importe cuando la vista previa se vea correcta</strong>
+                </div>
+            </xpath>
+            <xpath expr="//button[@name='import_file_button']" position="attributes">
+                <attribute name="string">Importar extracto</attribute>
+                <attribute name="class">btn-primary</attribute>
+            </xpath>
+            <xpath expr="//button[@special='cancel']" position="attributes">
+                <attribute name="string">Cancelar</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>
