@@ -10,6 +10,11 @@ class AccountBankStatementLine(models.Model):
     def _sheet_preview_normalize_ref(self, reference):
         return (reference or "").strip()
 
+    def _sheet_preview_is_reliable_ref(self, reference):
+        """Bank fees often reuse '0'; do not treat that as a unique key."""
+        ref = self._sheet_preview_normalize_ref(reference)
+        return bool(ref) and ref != "0"
+
     def _sheet_preview_existing_refs(self, journal):
         """Return normalized bank references already present on the journal."""
         if not journal:
@@ -24,5 +29,5 @@ class AccountBankStatementLine(models.Model):
         return {
             self._sheet_preview_normalize_ref(line["ref"])
             for line in refs
-            if self._sheet_preview_normalize_ref(line.get("ref"))
+            if self._sheet_preview_is_reliable_ref(line.get("ref"))
         }

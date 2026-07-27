@@ -431,7 +431,10 @@ class AccountStatementImport(models.TransientModel):
             kept = []
             for lvals in st_vals.get("transactions") or []:
                 ref = Line._sheet_preview_normalize_ref(lvals.get("ref"))
-                if ref and ref in existing_refs:
+                if (
+                    Line._sheet_preview_is_reliable_ref(ref)
+                    and ref in existing_refs
+                ):
                     omitted.append(lvals)
                     if "balance_start" in st_vals:
                         st_vals["balance_start"] += float(lvals["amount"])
@@ -444,7 +447,7 @@ class AccountStatementImport(models.TransientModel):
                 {
                     Line._sheet_preview_normalize_ref(line.get("ref"))
                     for line in omitted
-                    if Line._sheet_preview_normalize_ref(line.get("ref"))
+                    if Line._sheet_preview_is_reliable_ref(line.get("ref"))
                 }
             )
             if len(omitted) == 1:

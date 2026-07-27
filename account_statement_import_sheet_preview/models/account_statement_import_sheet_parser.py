@@ -118,7 +118,9 @@ class AccountStatementImportSheetParser(models.TransientModel):
         duplicate_count = 0
         for line in lines:
             ref = Line._sheet_preview_normalize_ref(line.get("reference"))
-            is_duplicate = bool(ref and ref in existing_refs)
+            is_duplicate = bool(
+                Line._sheet_preview_is_reliable_ref(ref) and ref in existing_refs
+            )
             if is_duplicate:
                 duplicate_count += 1
             preview_lines.append(
