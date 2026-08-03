@@ -117,6 +117,32 @@ COLUMN_ALIASES = {
     ],
 }
 
+EXACT_ONLY_ALIASES = {
+    "tipo",
+    "id",
+    "ref",
+    "date",
+    "signo",
+    "valor",
+}
+
+COLUMN_CFG_FIELDS = [
+    "cfg_timestamp_column",
+    "cfg_amount_column",
+    "cfg_amount_debit_column",
+    "cfg_amount_credit_column",
+    "cfg_debit_credit_column",
+    "cfg_balance_column",
+    "cfg_description_column",
+    "cfg_reference_column",
+    "cfg_notes_column",
+    "cfg_partner_name_column",
+    "cfg_transaction_id_column",
+    "cfg_currency_column",
+    "cfg_bank_account_column",
+    "cfg_bank_name_column",
+]
+
 MAPPING_SYNC_FIELDS = [
     "delimiter",
     "file_encoding",
@@ -617,9 +643,44 @@ class AccountStatementImport(models.TransientModel):
             journal._set_last_sheet_mapping(mapping)
         return mapping
 
+    def _clear_column_cfg(self):
+        for field_name in COLUMN_CFG_FIELDS:
+            setattr(self, field_name, False)
+        self.cfg_debit_value = "D"
+        self.cfg_credit_value = "C"
+        self.cfg_amount_type = "simple_value"
+        self.cfg_header_lines_skip_count = 0
+        self.cfg_no_header = False
+
+    def _iter_candidate_mappings(self):
+        seen = set()
+        for mapping in [self.sheet_mapping_id] + list(
+            self.journal_id.sheet_mapping_ids if self.journal_id else []
+        ):
+            if not mapping or mapping.id in seen:
+                continue
+            seen.add(mapping.id)
+            yield mapping
+
+    def _try_existing_mappings(self, data_file):
+        Parser = self.env["account.statement.import.sheet.parser"]
+        filename = self.statement_filename or "statement.xlsx"
+        for mapping in self._iter_candidate_mappings():
+            parsed = Parser.get_parsed_preview(data_file, mapping, filename, limit=5)
+            if not parsed.get("error") and parsed.get("line_count"):
+                return mapping
+        return self.env["account.statement.import.sheet.mapping"]
+
     def _auto_detect_and_preview(self):
         data_file = self._get_file_data()
         filename = (self.statement_filename or "").lower()
+        working = self._try_existing_mappings(data_file)
+        if working:
+            self.sheet_mapping_id = working
+            self._load_mapping_to_cfg(working)
+            self._refresh_preview_data()
+            return
+        self._clear_column_cfg()
         detected = self._detect_file_settings(data_file, filename)
         for key, value in detected.items():
             setattr(self, key, value)
@@ -630,6 +691,7 @@ class AccountStatementImport(models.TransientModel):
         if matching:
             self.sheet_mapping_id = matching
             self.mapping_name = matching.name
+            self._load_mapping_to_cfg(matching)
         self._refresh_preview_data()
 
     def _detect_file_settings(self, data_file, filename):
@@ -643,6 +705,8 @@ class AccountStatementImport(models.TransientModel):
             "cfg_amount_type": "simple_value",
             "cfg_amount_inverse_sign": False,
         }
+        for field_name in COLUMN_CFG_FIELDS:
+            result[field_name] = False
         if filename.endswith((".xlsx", ".xls")):
             result["cfg_delimiter"] = "n/a"
             result["cfg_file_encoding"] = "utf-8"
@@ -657,58 +721,88 @@ class AccountStatementImport(models.TransientModel):
             result["cfg_delimiter"] = delimiter_key
 
         Parser = self.env["account.statement.import.sheet.parser"]
-        raw = Parser.get_raw_preview(
+        raw_all = Parser.get_raw_preview(
             data_file,
             delimiter=result.get("cfg_delimiter", "comma"),
             file_encoding=result.get("cfg_file_encoding", "utf-8"),
             quotechar='"',
             header_lines_skip_count=0,
-            no_header=False,
+            no_header=True,
             offset_column=0,
-            limit=30,
+            limit=60,
+            skip_empty_lines=False,
         )
-        if raw.get("is_xlsx"):
+        if raw_all.get("is_xlsx"):
             result["cfg_delimiter"] = "n/a"
-        columns = raw.get("columns") or []
-        rows = raw.get("rows") or []
-        mapped_columns = self._suggest_columns(columns)
-        has_header = self._row_looks_like_header(columns, mapped_columns)
-        if not has_header and result.get("cfg_delimiter") != "n/a":
-            result["cfg_no_header"] = True
+        all_rows = raw_all.get("rows") or []
+        header_index = self._find_header_row_index(all_rows)
+        if header_index is not None:
+            skip_count = 0 if header_index == 0 else header_index + 1
+            result["cfg_header_lines_skip_count"] = skip_count
+            result["cfg_no_header"] = False
+            columns = [
+                value if value else f"Column {index}"
+                for index, value in enumerate(all_rows[header_index])
+            ]
+            rows = [row for row in all_rows[header_index + 1 :] if any(row)][:30]
+            mapped_columns = self._suggest_columns(columns)
+            has_header = True
+            result.update(mapped_columns)
+        else:
             raw = Parser.get_raw_preview(
                 data_file,
                 delimiter=result.get("cfg_delimiter", "comma"),
                 file_encoding=result.get("cfg_file_encoding", "utf-8"),
                 quotechar='"',
                 header_lines_skip_count=0,
-                no_header=True,
+                no_header=False,
                 offset_column=0,
                 limit=30,
             )
             columns = raw.get("columns") or []
             rows = raw.get("rows") or []
-            no_header_layout = self._suggest_no_header_columns(rows)
-            if no_header_layout:
-                result.update(no_header_layout)
-                mapped_columns = {
-                    key: value
-                    for key, value in no_header_layout.items()
-                    if key.startswith("cfg_") and key.endswith("_column")
-                }
+            mapped_columns = self._suggest_columns(columns)
+            has_header = self._row_looks_like_header(columns, mapped_columns)
+            if not has_header and result.get("cfg_delimiter") != "n/a":
+                result["cfg_no_header"] = True
+                raw = Parser.get_raw_preview(
+                    data_file,
+                    delimiter=result.get("cfg_delimiter", "comma"),
+                    file_encoding=result.get("cfg_file_encoding", "utf-8"),
+                    quotechar='"',
+                    header_lines_skip_count=0,
+                    no_header=True,
+                    offset_column=0,
+                    limit=30,
+                )
+                columns = raw.get("columns") or []
+                rows = raw.get("rows") or []
+                no_header_layout = self._suggest_no_header_columns(rows)
+                if no_header_layout:
+                    result.update(no_header_layout)
+                    mapped_columns = {
+                        key: value
+                        for key, value in no_header_layout.items()
+                        if key.startswith("cfg_") and key.endswith("_column")
+                    }
+                else:
+                    mapped_columns = {}
             else:
-                mapped_columns = {}
+                result["cfg_no_header"] = False
+                result.update(mapped_columns)
+        if mapped_columns.get("cfg_amount_debit_column") and mapped_columns.get(
+            "cfg_amount_credit_column"
+        ):
+            result["cfg_amount_type"] = "distinct_credit_debit"
+        elif mapped_columns.get("cfg_debit_credit_column"):
+            result["cfg_amount_type"] = "absolute_value"
+            debit_value, credit_value = self._detect_debit_credit_values(
+                rows, columns, mapped_columns.get("cfg_debit_credit_column")
+            )
+            result["cfg_debit_value"] = debit_value
+            result["cfg_credit_value"] = credit_value
         else:
-            result["cfg_no_header"] = False
-            result.update(mapped_columns)
-        if not result.get("cfg_amount_type"):
-            if mapped_columns.get("cfg_amount_debit_column") and mapped_columns.get(
-                "cfg_amount_credit_column"
-            ):
-                result["cfg_amount_type"] = "distinct_credit_debit"
-            elif mapped_columns.get("cfg_debit_credit_column"):
-                result["cfg_amount_type"] = "absolute_value"
-            else:
-                result["cfg_amount_type"] = "simple_value"
+            result["cfg_amount_type"] = "simple_value"
         date_format, thousands, decimals = self._detect_number_and_date(
             columns, rows, mapped_columns
         )
@@ -719,6 +813,47 @@ class AccountStatementImport(models.TransientModel):
         if has_header or not result.get("cfg_float_decimal_sep"):
             result["cfg_float_decimal_sep"] = decimals
         return result
+
+    def _find_header_row_index(self, rows):
+        best_index = None
+        best_score = 0
+        for index, row in enumerate(rows[:40]):
+            if not any(row):
+                continue
+            mapped = self._suggest_columns(row)
+            score = 0
+            if mapped.get("cfg_timestamp_column"):
+                score += 3
+            if mapped.get("cfg_amount_column") or (
+                mapped.get("cfg_amount_debit_column")
+                and mapped.get("cfg_amount_credit_column")
+            ):
+                score += 3
+            if mapped.get("cfg_reference_column"):
+                score += 1
+            if mapped.get("cfg_description_column"):
+                score += 1
+            if mapped.get("cfg_debit_credit_column"):
+                score += 1
+            if mapped.get("cfg_balance_column"):
+                score += 1
+            if score >= 6 and score > best_score:
+                best_index = index
+                best_score = score
+        return best_index
+
+    def _detect_debit_credit_values(self, rows, columns, column_name):
+        idx = self._get_column_index(columns, column_name)
+        values = set()
+        if idx is not None:
+            for row in rows[:30]:
+                if idx < len(row) and row[idx]:
+                    values.add(str(row[idx]).strip().upper())
+        if "ND" in values and "NC" in values:
+            return "ND", "NC"
+        if "D" in values and "C" in values:
+            return "D", "C"
+        return "D", "C"
 
     def _detect_encoding(self, data_file):
         for encoding in ("utf-8", "utf-8-sig", "windows-1252", "iso-8859-1"):
@@ -760,7 +895,20 @@ class AccountStatementImport(models.TransientModel):
             .replace("ó", "o")
             .replace("ú", "u")
         )
-        return re.sub(r"\s+", " ", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.rstrip(".")
+
+    def _header_matches_alias(self, header, aliases):
+        if not header:
+            return False
+        if header in aliases:
+            return True
+        for alias in aliases:
+            if alias in EXACT_ONLY_ALIASES or len(alias) <= 3:
+                continue
+            if alias in header:
+                return True
+        return False
 
     def _suggest_columns(self, columns):
         result = {}
@@ -773,7 +921,7 @@ class AccountStatementImport(models.TransientModel):
             for index, header in normalized.items():
                 if index in used:
                     continue
-                if header in aliases or any(alias in header for alias in aliases):
+                if self._header_matches_alias(header, aliases):
                     result[f"cfg_{field_name}"] = columns[index]
                     used.add(index)
                     break
@@ -802,7 +950,7 @@ class AccountStatementImport(models.TransientModel):
         for column in columns:
             normalized = self._normalize_header(column)
             for aliases in COLUMN_ALIASES.values():
-                if normalized in aliases:
+                if self._header_matches_alias(normalized, aliases):
                     return True
         return False
 

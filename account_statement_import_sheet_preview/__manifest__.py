@@ -4,7 +4,7 @@
 {
     "name": "Bank Statement Sheet Import Preview",
     "summary": "Preview TXT/CSV/XLSX statements and configure reusable sheet mappings",
-    "version": "18.0.1.0.4",
+    "version": "18.0.1.0.5",
     "category": "Accounting",
     "website": "https://github.com/OCA/bank-statement-import",
     "author": "andyengit, Odoo Community Association (OCA)",

@@ -88,6 +88,7 @@ class AccountStatementImportSheetParser(models.TransientModel):
         no_header=False,
         offset_column=0,
         limit=20,
+        skip_empty_lines=True,
     ):
         """Return raw columns/rows for UI preview without requiring a full mapping."""
         Mapping = self.env["account.statement.import.sheet.mapping"]
@@ -145,7 +146,8 @@ class AccountStatementImportSheetParser(models.TransientModel):
             ]
             data_rows = rows[header_skip + 1 :]
 
-        data_rows = [row for row in data_rows if any(row)]
+        if skip_empty_lines:
+            data_rows = [row for row in data_rows if any(row)]
         return {
             "columns": columns,
             "rows": data_rows[:limit],
