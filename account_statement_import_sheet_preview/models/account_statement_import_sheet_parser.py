@@ -2,7 +2,9 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
+import re
 from csv import reader
+from decimal import Decimal
 from io import BytesIO, StringIO
 from zipfile import BadZipFile
 
@@ -19,6 +21,61 @@ except (OSError, ImportError) as err:  # pragma: no cover
 
 class AccountStatementImportSheetParser(models.TransientModel):
     _inherit = "account.statement.import.sheet.parser"
+
+    @api.model
+    def _guess_float_separators_from_value(self, value):
+        """Guess thousands/decimal separators from a single numeric cell.
+
+        Some bank CSVs mix formats in the same file (e.g. European amounts and
+        US balances). The last separator is treated as the decimal mark.
+        """
+        text = str(value or "")
+        last_comma = text.rfind(",")
+        last_dot = text.rfind(".")
+        if last_comma >= 0 and last_dot >= 0:
+            if last_dot > last_comma:
+                return ",", "."
+            return ".", ","
+        if last_comma >= 0:
+            return None, ","
+        if last_dot >= 0:
+            parts = text.rsplit(".", 1)
+            if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+                return ".", None
+            return None, "."
+        return None, None
+
+    @api.model
+    def _parse_decimal_with_separators(self, value, thousands, decimal):
+        text = str(value)
+        allowed = r"[^\d\-+"
+        if thousands:
+            allowed += re.escape(thousands)
+        if decimal:
+            allowed += re.escape(decimal)
+        allowed += "]+"
+        text = re.sub(allowed, "", text) or "0"
+        if thousands:
+            text = text.replace(thousands, "")
+        if decimal:
+            text = text.replace(decimal, ".")
+        return float(text)
+
+    @api.model
+    def _parse_decimal(self, value, mapping):
+        if isinstance(value, (Decimal, float, int)):
+            return super()._parse_decimal(value, mapping)
+        text = str(value)
+        if "," in text and "." in text:
+            thousands, decimal = self._guess_float_separators_from_value(text)
+            return self._parse_decimal_with_separators(text, thousands, decimal)
+        try:
+            return super()._parse_decimal(value, mapping)
+        except ValueError:
+            thousands, decimal = self._guess_float_separators_from_value(text)
+            if thousands or decimal:
+                return self._parse_decimal_with_separators(text, thousands, decimal)
+            raise
 
     @api.model
     def get_raw_preview(
