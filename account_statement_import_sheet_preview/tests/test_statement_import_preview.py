@@ -142,3 +142,21 @@ class TestStatementImportPreview(TransactionCase):
             [("journal_id", "=", self.journal.id)]
         )
         self.assertEqual(first_count, second_count)
+
+    def test_identical_sms_fees_are_imported_separately(self):
+        sample = path.join(
+            path.dirname(__file__), "samples", "sms_fees_duplicate.txt"
+        )
+        wizard = self._wizard_from_file(sample, "sms_fees_duplicate.txt")
+        wizard._auto_detect_and_preview()
+        self.assertFalse(wizard.preview_error)
+        self.assertEqual(wizard.preview_line_count, 3)
+        wizard.import_file_button()
+        lines = self.env["account.bank.statement.line"].search(
+            [("journal_id", "=", self.journal.id)], order="date, id"
+        )
+        self.assertEqual(len(lines), 3)
+        sms = lines.filtered(lambda line: line.ref == "9640431072026")
+        self.assertEqual(len(sms), 2)
+        self.assertEqual(len(set(sms.mapped("unique_import_id"))), 2)
+        self.assertTrue(all(line.amount == -8 for line in sms))

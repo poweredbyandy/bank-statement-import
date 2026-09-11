@@ -21,19 +21,24 @@ class AccountJournal(models.Model):
     ):
         Line = self.env["account.bank.statement.line"]
         payment_ref = (st_line_vals.get("payment_ref") or "").strip()
+        balance = st_line_vals.pop("_sheet_balance", None)
         if not st_line_vals.get("unique_import_id"):
             ref = Line._sheet_preview_normalize_ref(st_line_vals.get("ref"))
             if ref:
                 date_value = st_line_vals.get("date") or ""
                 amount = st_line_vals.get("amount") or ""
-                st_line_vals["unique_import_id"] = (
-                    f"ref:{ref}:{date_value}:{amount}:{payment_ref}"
-                )
+                parts = ["ref:%s" % ref, str(date_value), str(amount), payment_ref]
+                if balance is not None:
+                    parts.append(str(balance))
+                st_line_vals["unique_import_id"] = ":".join(parts)
         elif payment_ref:
-            # Same bank ref + same day (e.g. "0" fees) must stay distinct.
             uid = st_line_vals["unique_import_id"]
             if payment_ref not in uid:
                 st_line_vals["unique_import_id"] = f"{uid}:{payment_ref}"
+            if balance is not None:
+                uid = st_line_vals["unique_import_id"]
+                if str(balance) not in uid:
+                    st_line_vals["unique_import_id"] = f"{uid}:{balance}"
         return super()._statement_line_import_update_unique_import_id(
             st_line_vals, account_number
         )

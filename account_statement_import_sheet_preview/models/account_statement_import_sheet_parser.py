@@ -157,6 +157,20 @@ class AccountStatementImportSheetParser(models.TransientModel):
         }
 
     @api.model
+    def _convert_line_to_transactions(self, line):
+        transactions = super()._convert_line_to_transactions(line)
+        Line = self.env["account.bank.statement.line"]
+        balance = line.get("balance")
+        for transaction in transactions:
+            if transaction.get("ref"):
+                transaction["ref"] = Line._sheet_preview_normalize_ref(
+                    transaction["ref"]
+                )
+            if balance is not None:
+                transaction["_sheet_balance"] = balance
+        return transactions
+
+    @api.model
     def get_parsed_preview(self, data_file, mapping, filename, limit=20):
         """Dry-run parse using the standard sheet parser."""
         journal = self.env["account.journal"].browse(self.env.context.get("journal_id"))

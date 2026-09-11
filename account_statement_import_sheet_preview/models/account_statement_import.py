@@ -449,6 +449,23 @@ class AccountStatementImport(models.TransientModel):
                 self.sheet_mapping_id = mapping
         return super()._parse_file(data_file)
 
+    def _complete_stmts_vals(self, stmts_vals, journal, account_number):
+        stmts_vals = super()._complete_stmts_vals(stmts_vals, journal, account_number)
+        self._sheet_preview_disambiguate_unique_import_ids(stmts_vals)
+        return stmts_vals
+
+    def _sheet_preview_disambiguate_unique_import_ids(self, stmts_vals):
+        seen = {}
+        for st_vals in stmts_vals:
+            for lvals in st_vals.get("transactions") or []:
+                uid = lvals.get("unique_import_id")
+                if not uid:
+                    continue
+                count = seen.get(uid, 0) + 1
+                seen[uid] = count
+                if count > 1:
+                    lvals["unique_import_id"] = "%s:%s" % (uid, count)
+
     def _create_bank_statements(self, stmts_vals, result):
         omitted = []
         Line = self.env["account.bank.statement.line"]
