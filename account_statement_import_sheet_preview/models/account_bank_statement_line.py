@@ -8,7 +8,16 @@ class AccountBankStatementLine(models.Model):
     _inherit = "account.bank.statement.line"
 
     def _sheet_preview_normalize_ref(self, reference):
-        return (reference or "").strip().lstrip("'").strip()
+        """Normalize a bank reference from text or an Excel number."""
+        if isinstance(reference, bool) or reference is None:
+            text = ""
+        elif isinstance(reference, float):
+            text = str(int(reference)) if reference.is_integer() else str(reference)
+        elif isinstance(reference, int):
+            text = str(reference)
+        else:
+            text = str(reference)
+        return text.strip().lstrip("'").strip()
 
     def _sheet_preview_is_reliable_ref(self, reference):
         """Bank fees often reuse '0'; do not treat that as a unique key."""

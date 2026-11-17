@@ -115,6 +115,16 @@ class TestStatementImportPreview(TransactionCase):
         self.assertTrue(amounts)
         self.assertLess(amounts[0], 0)
 
+    def test_normalize_ref_accepts_text_and_number(self):
+        line = self.env["account.bank.statement.line"]
+        self.assertEqual(line._sheet_preview_normalize_ref("  '12345 "), "12345")
+        self.assertEqual(line._sheet_preview_normalize_ref(12345), "12345")
+        self.assertEqual(line._sheet_preview_normalize_ref(12345.0), "12345")
+        self.assertEqual(line._sheet_preview_normalize_ref("REF-10"), "REF-10")
+        self.assertEqual(line._sheet_preview_normalize_ref(None), "")
+        self.assertFalse(line._sheet_preview_is_reliable_ref(0))
+        self.assertFalse(line._sheet_preview_is_reliable_ref("0"))
+
     def test_duplicate_reference_is_omitted(self):
         wizard = self._wizard_from_sample()
         wizard._auto_detect_and_preview()
